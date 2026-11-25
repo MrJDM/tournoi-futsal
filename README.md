@@ -11,4 +11,4 @@ Application web mono-fichier (`index.html`) pour un tournoi de foot en salle à 
 4.0 de base, +0.5 cardio, +0.5 technique, +0.5 gentleman / auto-arbitrage, +0.5 capitaine (validé par l'enseignant), malus enseignant. Maximum 6.0.
 
 ## Technique
-Pas de compte ni de clé : la synchronisation entre téléphones utilise WebRTC (PeerJS, broker public gratuit). Les données restent en localStorage sur l'appareil de l'enseignant. Fonctionne sur GitHub Pages (HTTPS requis).
+Pas de compte ni de clé : les téléphones se synchronisent via un relais public gratuit (ntfy.sh), protégé par le code de session. L’état est compressé et envoyé à chaque modification ; ne saisissez pas de noms de famille. Les données restent aussi en localStorage sur l’appareil de l’enseignant. Fonctionne sur GitHub Pages (HTTPS).

@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tournoi Futsal V3 — Gestion & Co-évaluation (4 à 6)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
     body {
@@ -380,12 +379,31 @@
     //    L'enseignant est l'hôte : il détient l'état de référence et le diffuse.
     //    Les observateurs envoient des opérations ciblées (pas d'écrasement mutuel).
     // -------------------------------------------------------------------------
-    const PEER_PREFIX = 'futsal-v3-';
-    let peer = null;
-    let hostConns = [];
-    let hostConn = null;
-    let observerRetry = null;
-    let leaving = false;
+    const RELAY = 'https://ntfy.sh/';
+    const TOPIC = code => `futsal3-${code.toLowerCase()}`;
+    let esOps = null, esState = null, relayCode = '', publishTimer = null;
+
+    async function encodePayload(obj) {
+      const json = JSON.stringify(obj);
+      const bytes = new TextEncoder().encode(json);
+      let out = bytes, prefix = 'j:';
+      if (typeof CompressionStream !== 'undefined') {
+        const cs = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+        out = new Uint8Array(await new Response(cs).arrayBuffer());
+        prefix = 'z:';
+      }
+      let bin = ''; out.forEach(b => bin += String.fromCharCode(b));
+      return prefix + btoa(bin);
+    }
+    async function decodePayload(str) {
+      const bin = atob(str.slice(2));
+      const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+      if (str.startsWith('z:')) {
+        const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+        return JSON.parse(await new Response(ds).text());
+      }
+      return JSON.parse(new TextDecoder().decode(bytes));
+    }
 
     function setSync(status, label) {
       const dot = document.getElementById('sync-indicator');
@@ -398,74 +416,86 @@
 
     function closePeer() {
       leaving = true;
-      clearTimeout(observerRetry);
-      try { peer && peer.destroy(); } catch (e) {}
-      peer = null; hostConns = []; hostConn = null;
+      clearTimeout(publishTimer);
+      if (esOps) esOps.close();
+      if (esState) esState.close();
+      esOps = esState = null;
+      hostConn = null;
     }
 
-    function hostSession(code, attempt = 0) {
+    let leaving = false;
+    let hostConn = null;
+    let lastObserverRx = 0;
+
+    function sse(topic, since, onMsg, onOpen, onErr) {
+      const es = new EventSource(`${RELAY}${topic}/sse?since=${since}`);
+      es.onopen = onOpen;
+      es.onerror = onErr;
+      es.onmessage = ev => {
+        try { const d = JSON.parse(ev.data); if (d.event === 'message') onMsg(d.message); } catch (e) {}
+      };
+      return es;
+    }
+
+    // Hôte (enseignant) : reçoit les opérations des observateurs, publie l'état
+    function hostSession(code) {
       leaving = false;
-      if (typeof Peer === 'undefined') { setSync('off', 'Hors ligne (PeerJS indisponible)'); return; }
-      setSync('wait', 'Connexion…');
-      peer = new Peer(PEER_PREFIX + code);
-      peer.on('open', () => setSync('ok', `${hostConns.length} observateur(s)`));
-      peer.on('connection', conn => {
-        conn.on('open', () => {
-          hostConns.push(conn);
-          conn.send({ type: 'state', state });
-          setSync('ok', `${hostConns.length} observateur(s)`);
-        });
-        conn.on('data', msg => {
-          if (msg && msg.type === 'op' && OBSERVER_OPS.has(msg.op && msg.op.t)) {
-            applyOp(msg.op);
-            renderAll();
-            persist();
-          }
-        });
-        const drop = () => { hostConns = hostConns.filter(c => c !== conn); setSync('ok', `${hostConns.length} observateur(s)`); };
-        conn.on('close', drop);
-        conn.on('error', drop);
-      });
-      peer.on('disconnected', () => { if (!leaving) { setSync('wait', 'Reconnexion…'); try { peer.reconnect(); } catch (e) {} } });
-      peer.on('error', err => {
-        if (err.type === 'unavailable-id' && attempt < 5 && !leaving) {
-          // ancien pair pas encore libéré par le serveur : on réessaie
-          try { peer.destroy(); } catch (e) {}
-          setTimeout(() => hostSession(code, attempt + 1), 2500);
-        } else if (err.type !== 'peer-unavailable') {
-          setSync('off', 'Hors ligne');
-        }
-      });
+      relayCode = code;
+      setSync('wait', 'Connexion au relais…');
+      esOps = sse(`${TOPIC(code)}-ops`, Math.floor(Date.now() / 1000), async msg => {
+        try {
+          const m = await decodePayload(msg);
+          lastObserverRx = Date.now();
+          if (m.hello) { publishState(); return; }
+          if (m.op && OBSERVER_OPS.has(m.op.t)) { applyOp(m.op); renderAll(); persist(); }
+        } catch (e) {}
+      }, () => { setSync('ok', 'Relais connecté'); publishState(); },
+         () => { if (!leaving) setSync('wait', 'Reconnexion…'); });
     }
 
     function broadcast() {
-      hostConns.forEach(c => { if (c.open) c.send({ type: 'state', state }); });
+      clearTimeout(publishTimer);
+      publishTimer = setTimeout(publishState, 2000);
     }
 
+    async function publishState() {
+      if (!state || currentRole !== 'teacher') return;
+      try {
+        const body = await encodePayload(state);
+        await fetch(`${RELAY}${TOPIC(relayCode)}-state`, { method: 'POST', body });
+      } catch (e) { setSync('off', 'Relais injoignable'); }
+    }
+
+    // Observateur : reçoit l'état, envoie des opérations ciblées
     function connectObserver(code, onFirstState, onFail) {
       leaving = false;
       let got = false;
       setSync('wait', 'Connexion…');
-      if (typeof Peer === 'undefined') { onFail('Service de connexion indisponible (réseau ?).'); return; }
-      peer = new Peer();
-      peer.on('open', () => {
-        hostConn = peer.connect(PEER_PREFIX + code, { reliable: true });
-        const timeout = setTimeout(() => { if (!got) { closePeer(); onFail(`Session "${code}" introuvable. Vérifiez le code et que l'enseignant a ouvert sa session.`); } }, 9000);
-        hostConn.on('data', msg => {
-          if (msg && msg.type === 'state') {
-            state = msg.state;
-            setSync('ok', 'Synchronisé');
-            if (!got) { got = true; clearTimeout(timeout); onFirstState(); } else renderAll();
-          }
-        });
-        hostConn.on('close', () => {
-          if (leaving) return;
-          setSync('off', 'Connexion perdue, nouvelle tentative…');
-          observerRetry = setTimeout(() => { closePeer(); connectObserver(code, () => {}, () => setSync('off', 'Hors ligne')); }, 3000);
-        });
-      });
-      peer.on('error', () => { if (!got) { onFail('Connexion impossible. Vérifiez votre réseau.'); } });
+      const timeout = setTimeout(() => {
+        if (!got) { closePeer(); onFail(`Session "${code}" introuvable. Vérifiez le code et que l'enseignant a ouvert sa session.`); }
+      }, 9000);
+      esState = sse(`${TOPIC(code)}-state`, 'latest', async msg => {
+        try {
+          const st = await decodePayload(msg);
+          state = st;
+          setSync('ok', 'Synchronisé');
+          if (!got) { got = true; clearTimeout(timeout); onFirstState(); } else renderAll();
+        } catch (e) {}
+      }, () => {
+        hostConn = { open: true };
+        // demande à l'hôte de republier l'état (au cas où le cache serait ancien)
+        sendToHost({ hello: 1 });
+      }, () => { if (!leaving && got) setSync('wait', 'Reconnexion…'); });
     }
+
+    async function sendToHost(m) {
+      try {
+        const body = await encodePayload(m);
+        const r = await fetch(`${RELAY}${TOPIC(sessionCode || relayCodeFromUrl())}-ops`, { method: 'POST', body });
+        return r.ok;
+      } catch (e) { return false; }
+    }
+    function relayCodeFromUrl() { return document.getElementById('join-code-input').value.trim().toUpperCase(); }
 
     const OBSERVER_OPS = new Set(['crit', 'note']);
 
@@ -539,8 +569,7 @@
         if (!OBSERVER_OPS.has(op.t)) return;
         applyOp(op); // retour visuel immédiat ; l'hôte renvoie l'état de référence
         renderAll();
-        if (hostConn && hostConn.open) hostConn.send({ type: 'op', op });
-        else showToast('Hors ligne : modification non transmise');
+        sendToHost({ op }).then(ok => { if (!ok) showToast('Hors ligne : modification non transmise'); });
       }
     }
 
