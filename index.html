@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tournoi Futsal V3 — Gestion & Co-évaluation (4 à 6)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: #f1f5f9;
+      color: #0f172a;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- ===================================================================== -->
+  <!-- ECRAN D'ACCUEIL : CHOIX DU MODE (ENSEIGNANT / OBSERVATEUR)            -->
+  <!-- ===================================================================== -->
+  <div id="landing-screen" class="flex-1 flex items-center justify-center p-4">
+    <div class="max-w-lg w-full bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="bg-slate-900 text-white p-6 text-center">
+        <span class="inline-block px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold tracking-wider uppercase mb-2">
+          Éducation Physique • Foot en Salle
+        </span>
+        <h1 class="text-2xl font-black tracking-tight">Tournoi & Co-Évaluation V3</h1>
+        <p class="text-slate-400 text-sm mt-1">4 équipes • Chrono • Finales • Barème Suisse (4 à 6)</p>
+      </div>
+
+      <div class="p-6 space-y-6">
+        <!-- Mode Enseignant -->
+        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-bold text-slate-900 text-lg">🎓 Mode Enseignant</h2>
+            <span class="text-xs font-semibold bg-slate-200 text-slate-700 px-2.5 py-0.5 rounded-full">Contrôle complet</span>
+          </div>
+          <p class="text-xs text-slate-600 mb-4 leading-relaxed">
+            Créez une session pour gérer le chrono, les scores, valider le rôle de <strong>Capitaine (+0.5)</strong>, appliquer d'éventuels malus et exporter les notes finales.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <button onclick="createTeacherSession()" class="flex-1 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white font-bold py-3 px-4 rounded-xl transition shadow-sm text-sm">
+              + Nouvelle session de tournoi
+            </button>
+          </div>
+          <div id="resume-session-box" class="hidden mt-3 pt-3 border-t border-slate-200">
+            <button onclick="resumeLastSession()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-xl text-xs transition">
+              Reprendre la session en cours (<span id="last-session-code" class="font-mono font-bold"></span>)
+            </button>
+          </div>
+        </div>
+
+        <!-- Mode Observateur (Élèves) -->
+        <div class="bg-blue-50/70 border border-blue-200 rounded-2xl p-5">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-bold text-blue-950 text-lg">📱 Mode Observateur</h2>
+            <span class="text-xs font-semibold bg-blue-100 text-blue-800 px-2.5 py-0.5 rounded-full">Responsable d'équipe</span>
+          </div>
+          <p class="text-xs text-blue-900/80 mb-4 leading-relaxed">
+            Entrez le code à 4 caractères affiché par l'enseignant pour co-évaluer les joueurs sur le terrain en direct.
+          </p>
+          <form onsubmit="joinObserverSession(event)" class="flex gap-2">
+            <input
+              id="join-code-input"
+              type="text"
+              maxlength="6"
+              placeholder="CODE (ex: K8P2)" autocapitalize="characters" autocomplete="off"
+              required
+              class="flex-1 uppercase font-mono font-black text-center text-lg tracking-widest bg-white border-2 border-blue-300 focus:border-blue-600 focus:outline-none rounded-xl px-3 py-2.5 text-slate-900"
+            />
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold px-5 py-2.5 rounded-xl transition shadow-sm text-sm">
+              Rejoindre
+            </button>
+          </form>
+          <p id="join-error-msg" class="hidden text-xs text-red-600 font-semibold mt-2"></p>
+        </div>
+
+        <!-- Rappel du barème -->
+        <div class="text-xs text-slate-500 bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-1">
+          <div class="font-bold text-slate-700 uppercase tracking-wider text-[11px] mb-1">Barème additif (Base 4.0)</div>
+          <div>• <strong>4.0</strong> : Participation active (malus possible si discipline)</div>
+          <div>• <strong>+0.5</strong> : Gestion cardio (effort continu, hydratation aux pauses)</div>
+          <div>• <strong>+0.5</strong> : Geste technique significatif (attaque ou défense)</div>
+          <div>• <strong>+0.5</strong> : Gentleman attitude / Fair-play / Auto-arbitrage</div>
+          <div>• <strong>+0.5</strong> : Capitaine (échauffement complet, tournus, rangement)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- APPLICATION PRINCIPALE (ENSEIGNANT & OBSERVATEUR)                     -->
+  <!-- ===================================================================== -->
+  <div id="app-screen" class="hidden flex-1 flex flex-col max-w-6xl w-full mx-auto pb-12">
+
+    <!-- Top Header Bar -->
+    <header class="bg-slate-900 text-white px-4 py-3 sm:px-6 sticky top-0 z-30 shadow-md">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <button onclick="exitToLanding()" title="Changer de session" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold">
+            ← Accueil
+          </button>
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="role-badge" class="text-[11px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-500 text-slate-950">Enseignant</span>
+              <span class="text-xs text-slate-400">Session :</span>
+              <span id="header-session-code" class="font-mono font-black text-base tracking-widest text-amber-300">----</span>
+              <span id="sync-indicator" class="inline-block w-2.5 h-2.5 rounded-full bg-slate-400" title="Hors ligne"></span>
+              <span id="sync-label" class="text-[11px] text-slate-400"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="copy-link-btn" onclick="copyShareLink()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg transition flex items-center gap-1.5">
+            📋 Copier lien élèves
+          </button>
+          <button id="export-csv-btn" onclick="exportToCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-lg transition flex items-center gap-1.5">
+            📥 Export Excel (.csv)
+          </button>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav id="main-tabs" class="flex gap-1.5 mt-3 overflow-x-auto no-scrollbar border-t border-slate-800 pt-2.5">
+        <button data-tab="eval" onclick="switchTab('eval')" class="tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap">
+          📋 Co-Évaluation & Notes
+        </button>
+        <button data-tab="matches" onclick="switchTab('matches')" class="tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap">
+          ⚽ Chrono, Matchs & Finales
+        </button>
+        <button data-tab="teams" onclick="switchTab('teams')" class="tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap">
+          👥 Composition & Capitaines
+        </button>
+      </nav>
+    </header>
+
+    <!-- =================================================================== -->
+    <!-- ONGLET 1 : CO-ÉVALUATION & NOTES (VUES OBSERVATEUR ET ENSEIGNANT)   -->
+    <!-- =================================================================== -->
+    <main id="tab-eval" class="p-4 sm:p-6 space-y-5">
+
+      <!-- Bandeau d'instruction rapide + Filtre d'équipe -->
+      <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 id="eval-title" class="font-extrabold text-slate-900 text-base">Grille d'observation par joueur (Fiche unique)</h2>
+          <p id="eval-subtitle" class="text-xs text-slate-500 mt-0.5">
+            Base 4.0 + 0.5 par critère validé. Les modifications sont enregistrées instantanément.
+          </p>
+        </div>
+
+        <!-- Sélecteur d'équipe observée -->
+        <div class="flex flex-wrap gap-1.5" id="eval-team-filters">
+          <!-- Généré dynamiquement -->
+        </div>
+      </div>
+
+      <!-- Cartes des critères (rappel visuel compact) -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
+        <div class="bg-white p-3 rounded-xl border border-slate-200">
+          <div class="font-bold text-slate-900">🫀 Cardio (+0.5)</div>
+          <div class="text-slate-500 text-[11px] mt-0.5">Hydratation aux pauses, effort constant sans se cramer.</div>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200">
+          <div class="font-bold text-slate-900">⚡ Technique (+0.5)</div>
+          <div class="text-slate-500 text-[11px] mt-0.5">Au moins 1 geste technique réussi (attaque ou défense).</div>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200">
+          <div class="font-bold text-slate-900">🤝 Gentleman (+0.5)</div>
+          <div class="text-slate-500 text-[11px] mt-0.5">Esprit rugby, fair-play, encouragements, auto-arbitrage.</div>
+        </div>
+        <div class="bg-white p-3 rounded-xl border border-slate-200">
+          <div class="font-bold text-amber-800">👑 Capitaine (+0.5)</div>
+          <div class="text-slate-500 text-[11px] mt-0.5">Échauffement complet, tournus et rangement (Prof).</div>
+        </div>
+      </div>
+
+      <!-- Liste des fiches joueurs -->
+      <div id="players-eval-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Généré dynamiquement -->
+      </div>
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- ONGLET 2 : CHRONO, MATCHS DE POULE, CLASSEMENT & FINALES            -->
+    <!-- =================================================================== -->
+    <main id="tab-matches" class="hidden p-4 sm:p-6 space-y-6">
+
+      <!-- Configuration du format (Enseignant uniquement) -->
+      <div id="teacher-format-bar" class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Format Phases Finales</label>
+            <select id="finals-mode-select" onchange="updateSettings()" class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800">
+              <option value="final_only">Poules + Grande Finale (1er vs 2e)</option>
+              <option value="both_finals">Poules + Petite Finale (3e vs 4e) & Grande Finale</option>
+              <option value="poules_only">Poules uniquement (6 matchs)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Durée des Finales</label>
+            <select id="finals-duration-select" onchange="updateSettings()" class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800">
+              <option value="240">4 min</option>
+              <option value="300" selected>5 min</option>
+              <option value="360">6 min</option>
+              <option value="480">8 min</option>
+            </select>
+          </div>
+        </div>
+        <button onclick="resetTournamentScores()" class="text-xs font-semibold text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition">
+          Réinitialiser les scores
+        </button>
+      </div>
+
+      <!-- Chronomètre de salle -->
+      <div id="timer-card" class="bg-slate-900 text-white rounded-3xl p-5 sm:p-6 shadow-lg">
+        <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div class="text-center md:text-left space-y-1">
+            <div class="flex items-center justify-center md:justify-start gap-2">
+              <span id="timer-phase-badge" class="px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase bg-emerald-500 text-slate-950">Match 1</span>
+              <span id="timer-step-counter" class="text-xs text-slate-400 font-semibold">Étape 1 / 13</span>
+            </div>
+            <h3 id="timer-match-title" class="text-xl sm:text-2xl font-black tracking-tight mt-1">Rouge vs Jaune</h3>
+            <p id="timer-duty-info" class="text-xs text-slate-300">Arbitrage : Bleu • Chrono : Sans maillot</p>
+          </div>
+
+          <div class="flex flex-col items-center">
+            <div id="timer-display" class="text-5xl sm:text-6xl font-black tabular-nums tracking-tight text-white">06:00</div>
+            <div class="flex items-center gap-2 mt-3">
+              <button onclick="prevTimerStep()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold">⏮ Préc.</button>
+              <button id="timer-toggle-btn" onclick="toggleTimer()" class="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow transition">
+                ▶ Démarrer
+              </button>
+              <button onclick="resetCurrentStepTimer()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold">↺</button>
+              <button onclick="nextTimerStep()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold">Suiv. ⏭</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grille Matchs + Classement -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Colonne Matchs (7 cols) -->
+        <div class="lg:col-span-7 space-y-4">
+          <h3 class="font-extrabold text-slate-900 text-sm uppercase tracking-wider">1. Matchs de Poules (6 min)</h3>
+          <div id="poule-matches-list" class="space-y-2.5"></div>
+
+          <div id="finals-section" class="pt-3 space-y-2.5">
+            <h3 class="font-extrabold text-amber-800 text-sm uppercase tracking-wider">2. Phases Finales</h3>
+            <div id="finals-matches-list" class="space-y-2.5"></div>
+          </div>
+        </div>
+
+        <!-- Colonne Classement (5 cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          <h3 class="font-extrabold text-slate-900 text-sm uppercase tracking-wider">Classement des Poules</h3>
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-xs text-left">
+              <thead class="bg-slate-800 text-white uppercase text-[11px]">
+                <tr>
+                  <th class="py-2.5 px-3">#</th>
+                  <th class="py-2.5 px-2">Équipe</th>
+                  <th class="py-2.5 px-2 text-center">MJ</th>
+                  <th class="py-2.5 px-2 text-center">Diff</th>
+                  <th class="py-2.5 px-2 text-center">BP</th>
+                  <th class="py-2.5 px-3 text-center">Pts</th>
+                </tr>
+              </thead>
+              <tbody id="standings-tbody" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+
+          <!-- Bannière Champion -->
+          <div id="champion-banner" class="hidden bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 rounded-2xl p-4 shadow-md text-center">
+            <div class="text-xs font-extrabold uppercase tracking-wider">🏆 Vainqueur du Tournoi</div>
+            <div id="champion-name" class="text-2xl font-black mt-0.5">—</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- ONGLET 3 : COMPOSITION DES ÉQUIPES & DÉSIGNATION DES CAPITAINES     -->
+    <!-- =================================================================== -->
+    <main id="tab-teams" class="hidden p-4 sm:p-6 space-y-5">
+      <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="font-extrabold text-slate-900 text-base">Composition des 4 équipes (4 × 5 joueurs)</h2>
+          <p class="text-xs text-slate-500">Saisissez les prénoms et cochez l'étoile 👑 pour désigner le capitaine responsable de l'échauffement et des tournus.</p>
+        </div>
+      </div>
+
+      <div id="teams-roster-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Généré dynamiquement -->
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Toast notification -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-slate-900 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-xl opacity-0 pointer-events-none transition-opacity duration-200 z-50"></div>
+
+  <!-- ===================================================================== -->
+  <!-- LOGIQUE APPLICATIVE + SYNCHRONISATION FIREBASE / LOCALSTORAGE         -->
+  <!-- ===================================================================== -->
+  <script type="module">
+    // -------------------------------------------------------------------------
+    // 2. STRUCTURE DES DONNÉES DU TOURNOI
+    // -------------------------------------------------------------------------
+    const TEAMS = [
+      { id: 'rouge', name: 'Rouge', badge: 'bg-red-100 text-red-800 border-red-200', dot: 'bg-red-500' },
+      { id: 'jaune', name: 'Jaune', badge: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-400' },
+      { id: 'bleu', name: 'Bleu', badge: 'bg-blue-100 text-blue-800 border-blue-200', dot: 'bg-blue-600' },
+      { id: 'sans', name: 'Sans maillot', badge: 'bg-slate-200 text-slate-800 border-slate-300', dot: 'bg-slate-600' }
+    ];
+
+    const POULE_FIXTURES = [
+      { id: 'm1', num: 1, teamA: 'rouge', teamB: 'jaune', refTeam: 'bleu', chronoTeam: 'sans' },
+      { id: 'm2', num: 2, teamA: 'bleu', teamB: 'sans', refTeam: 'rouge', chronoTeam: 'jaune' },
+      { id: 'm3', num: 3, teamA: 'rouge', teamB: 'bleu', refTeam: 'jaune', chronoTeam: 'sans' },
+      { id: 'm4', num: 4, teamA: 'jaune', teamB: 'sans', refTeam: 'rouge', chronoTeam: 'bleu' },
+      { id: 'm5', num: 5, teamA: 'rouge', teamB: 'sans', refTeam: 'jaune', chronoTeam: 'bleu' },
+      { id: 'm6', num: 6, teamA: 'jaune', teamB: 'bleu', refTeam: 'rouge', chronoTeam: 'sans' }
+    ];
+
+    function buildDefaultState(code) {
+      const players = {};
+      TEAMS.forEach(t => {
+        for (let i = 1; i <= 5; i++) {
+          const pid = `${t.id}_${i}`;
+          players[pid] = {
+            id: pid,
+            teamId: t.id,
+            index: i,
+            name: `Joueur ${i} (${t.name})`,
+            isCaptain: i === 1,
+            cardio: false,
+            technique: false,
+            gentleman: false,
+            captainValidated: false,
+            malus: 0,
+            note: ''
+          };
+        }
+      });
+
+      const matches = {};
+      POULE_FIXTURES.forEach(f => {
+        matches[f.id] = { scoreA: null, scoreB: null };
+      });
+      matches['petite_finale'] = { scoreA: null, scoreB: null, penA: 0, penB: 0 };
+      matches['grande_finale'] = { scoreA: null, scoreB: null, penA: 0, penB: 0 };
+
+      return {
+        code,
+        updatedAt: Date.now(),
+        settings: {
+          finalsMode: 'final_only',
+          finalsDuration: 300
+        },
+        matches,
+        players
+      };
+    }
+
+
+    let currentRole = 'teacher';
+    let sessionCode = '';
+    let state = null;
+    let selectedEvalTeam = 'all';
+
+    // -------------------------------------------------------------------------
+    // 3. SYNCHRONISATION MULTI-APPAREILS (WebRTC via PeerJS, sans compte ni clé)
+    //    L'enseignant est l'hôte : il détient l'état de référence et le diffuse.
+    //    Les observateurs envoient des opérations ciblées (pas d'écrasement mutuel).
+    // -------------------------------------------------------------------------
+    const PEER_PREFIX = 'futsal-v3-';
+    let peer = null;
+    let hostConns = [];
+    let hostConn = null;
+    let observerRetry = null;
+    let leaving = false;
+
+    function setSync(status, label) {
+      const dot = document.getElementById('sync-indicator');
+      const lab = document.getElementById('sync-label');
+      const colors = { ok: 'bg-emerald-400', wait: 'bg-amber-400', off: 'bg-red-500' };
+      dot.className = 'inline-block w-2.5 h-2.5 rounded-full ' + (colors[status] || 'bg-slate-400');
+      dot.title = label || '';
+      if (lab) lab.textContent = label || '';
+    }
+
+    function closePeer() {
+      leaving = true;
+      clearTimeout(observerRetry);
+      try { peer && peer.destroy(); } catch (e) {}
+      peer = null; hostConns = []; hostConn = null;
+    }
+
+    function hostSession(code, attempt = 0) {
+      leaving = false;
+      if (typeof Peer === 'undefined') { setSync('off', 'Hors ligne (PeerJS indisponible)'); return; }
+      setSync('wait', 'Connexion…');
+      peer = new Peer(PEER_PREFIX + code);
+      peer.on('open', () => setSync('ok', `${hostConns.length} observateur(s)`));
+      peer.on('connection', conn => {
+        conn.on('open', () => {
+          hostConns.push(conn);
+          conn.send({ type: 'state', state });
+          setSync('ok', `${hostConns.length} observateur(s)`);
+        });
+        conn.on('data', msg => {
+          if (msg && msg.type === 'op' && OBSERVER_OPS.has(msg.op && msg.op.t)) {
+            applyOp(msg.op);
+            renderAll();
+            persist();
+          }
+        });
+        const drop = () => { hostConns = hostConns.filter(c => c !== conn); setSync('ok', `${hostConns.length} observateur(s)`); };
+        conn.on('close', drop);
+        conn.on('error', drop);
+      });
+      peer.on('disconnected', () => { if (!leaving) { setSync('wait', 'Reconnexion…'); try { peer.reconnect(); } catch (e) {} } });
+      peer.on('error', err => {
+        if (err.type === 'unavailable-id' && attempt < 5 && !leaving) {
+          // ancien pair pas encore libéré par le serveur : on réessaie
+          try { peer.destroy(); } catch (e) {}
+          setTimeout(() => hostSession(code, attempt + 1), 2500);
+        } else if (err.type !== 'peer-unavailable') {
+          setSync('off', 'Hors ligne');
+        }
+      });
+    }
+
+    function broadcast() {
+      hostConns.forEach(c => { if (c.open) c.send({ type: 'state', state }); });
+    }
+
+    function connectObserver(code, onFirstState, onFail) {
+      leaving = false;
+      let got = false;
+      setSync('wait', 'Connexion…');
+      if (typeof Peer === 'undefined') { onFail('Service de connexion indisponible (réseau ?).'); return; }
+      peer = new Peer();
+      peer.on('open', () => {
+        hostConn = peer.connect(PEER_PREFIX + code, { reliable: true });
+        const timeout = setTimeout(() => { if (!got) { closePeer(); onFail(`Session "${code}" introuvable. Vérifiez le code et que l'enseignant a ouvert sa session.`); } }, 9000);
+        hostConn.on('data', msg => {
+          if (msg && msg.type === 'state') {
+            state = msg.state;
+            setSync('ok', 'Synchronisé');
+            if (!got) { got = true; clearTimeout(timeout); onFirstState(); } else renderAll();
+          }
+        });
+        hostConn.on('close', () => {
+          if (leaving) return;
+          setSync('off', 'Connexion perdue, nouvelle tentative…');
+          observerRetry = setTimeout(() => { closePeer(); connectObserver(code, () => {}, () => setSync('off', 'Hors ligne')); }, 3000);
+        });
+      });
+      peer.on('error', () => { if (!got) { onFail('Connexion impossible. Vérifiez votre réseau.'); } });
+    }
+
+    const OBSERVER_OPS = new Set(['crit', 'note']);
+
+    // Toutes les modifications passent par des opérations ciblées
+    function applyOp(op) {
+      switch (op.t) {
+        case 'crit': {
+          const p = state.players[op.pid];
+          if (p && ['cardio', 'technique', 'gentleman'].includes(op.field)) p[op.field] = !!op.value;
+          break;
+        }
+        case 'note': { const p = state.players[op.pid]; if (p) p.note = String(op.val || '').slice(0, 300); break; }
+        case 'validate': { const p = state.players[op.pid]; if (p && p.isCaptain) p.captainValidated = !!op.value; break; }
+        case 'malus': {
+          const p = state.players[op.pid];
+          if (p) p.malus = Math.max(0, Math.min(3.0, Math.round(((p.malus || 0) + op.delta) * 10) / 10));
+          break;
+        }
+        case 'name': { const p = state.players[op.pid]; if (p) p.name = String(op.val || '').trim().slice(0, 40) || `Joueur ${p.index}`; break; }
+        case 'captain': {
+          const target = state.players[op.pid];
+          if (!target) break;
+          const was = target.isCaptain;
+          Object.values(state.players).forEach(pl => {
+            if (pl.teamId === target.teamId) { pl.isCaptain = false; pl.captainValidated = false; }
+          });
+          target.isCaptain = !was;
+          break;
+        }
+        case 'score': {
+          const m = state.matches[op.mid];
+          if (!m) break;
+          if (m.scoreA === null) m.scoreA = 0;
+          if (m.scoreB === null) m.scoreB = 0;
+          const k = op.side === 'A' ? 'scoreA' : 'scoreB';
+          m[k] = Math.max(0, m[k] + op.delta);
+          break;
+        }
+        case 'pen': {
+          const m = state.matches[op.mid];
+          if (!m) break;
+          const k = op.side === 'A' ? 'penA' : 'penB';
+          m[k] = Math.max(0, (m[k] || 0) + op.delta);
+          break;
+        }
+        case 'settings':
+          state.settings.finalsMode = op.finalsMode;
+          state.settings.finalsDuration = op.finalsDuration;
+          break;
+        case 'reset':
+          POULE_FIXTURES.forEach(f => { state.matches[f.id] = { scoreA: null, scoreB: null }; });
+          state.matches['petite_finale'] = { scoreA: null, scoreB: null, penA: 0, penB: 0 };
+          state.matches['grande_finale'] = { scoreA: null, scoreB: null, penA: 0, penB: 0 };
+          break;
+      }
+    }
+
+    function persist() {
+      state.updatedAt = Date.now();
+      try { localStorage.setItem(`futsal_v3_session_${state.code}`, JSON.stringify(state)); } catch (e) {}
+      if (currentRole === 'teacher') broadcast();
+    }
+
+    function dispatch(op) {
+      if (currentRole === 'teacher') {
+        applyOp(op);
+        syncTimerSteps();
+        renderAll();
+        persist();
+      } else {
+        if (!OBSERVER_OPS.has(op.t)) return;
+        applyOp(op); // retour visuel immédiat ; l'hôte renvoie l'état de référence
+        renderAll();
+        if (hostConn && hostConn.open) hostConn.send({ type: 'op', op });
+        else showToast('Hors ligne : modification non transmise');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. GESTION DES SESSIONS
+    // -------------------------------------------------------------------------
+    function generateSessionCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const buf = new Uint32Array(4);
+      crypto.getRandomValues(buf);
+      return Array.from(buf, n => chars[n % chars.length]).join('');
+    }
+
+    window.createTeacherSession = function() {
+      const code = generateSessionCode();
+      currentRole = 'teacher';
+      sessionCode = code;
+      state = buildDefaultState(code);
+      localStorage.setItem('futsal_v3_last_code', code);
+      persistLocalOnly();
+      hostSession(code);
+      enterApp();
+      showToast(`Session ${code} créée !`);
+    };
+
+    function persistLocalOnly() {
+      try { localStorage.setItem(`futsal_v3_session_${state.code}`, JSON.stringify(state)); } catch (e) {}
+    }
+
+    window.resumeLastSession = function() {
+      const code = localStorage.getItem('futsal_v3_last_code');
+      if (!code) return;
+      const local = localStorage.getItem(`futsal_v3_session_${code}`);
+      currentRole = 'teacher';
+      sessionCode = code;
+      state = local ? JSON.parse(local) : buildDefaultState(code);
+      hostSession(code);
+      enterApp();
+    };
+
+    window.joinObserverSession = function(e) {
+      e.preventDefault();
+      const raw = document.getElementById('join-code-input').value.trim().toUpperCase();
+      if (raw) connectAsObserver(raw);
+    };
+
+    function connectAsObserver(code) {
+      const errEl = document.getElementById('join-error-msg');
+      errEl.classList.add('hidden');
+      closePeer();
+      connectObserver(code, () => {
+        currentRole = 'observer';
+        sessionCode = code;
+        selectedEvalTeam = 'rouge';
+        enterApp();
+        showToast(`Connecté en mode Observateur (${code})`);
+      }, msg => {
+        errEl.textContent = msg;
+        errEl.classList.remove('hidden');
+        setSync('off', '');
+      });
+    }
+
+    function checkUrlParamsAndLastSession() {
+      const params = new URLSearchParams(window.location.search);
+      const urlCode = (params.get('session') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+      const urlRole = params.get('role');
+
+      const lastCode = localStorage.getItem('futsal_v3_last_code');
+      if (lastCode) {
+        document.getElementById('resume-session-box').classList.remove('hidden');
+        document.getElementById('last-session-code').textContent = lastCode;
+      }
+      if (urlCode && urlRole === 'observer') {
+        document.getElementById('join-code-input').value = urlCode;
+        connectAsObserver(urlCode);
+      }
+    }
+
+    function initApp() { checkUrlParamsAndLastSession(); }
+
+    function enterApp() {
+      document.getElementById('landing-screen').classList.add('hidden');
+      document.getElementById('app-screen').classList.remove('hidden');
+
+      document.getElementById('header-session-code').textContent = sessionCode;
+      const badge = document.getElementById('role-badge');
+      const isT = currentRole === 'teacher';
+      badge.textContent = isT ? 'Enseignant' : 'Observateur Élève';
+      badge.className = 'text-[11px] font-extrabold uppercase px-2 py-0.5 rounded ' + (isT ? 'bg-emerald-400' : 'bg-blue-400') + ' text-slate-950';
+      ['teacher-format-bar', 'copy-link-btn', 'export-csv-btn', 'timer-card'].forEach(id =>
+        document.getElementById(id).classList.toggle('hidden', !isT));
+
+      syncTimerSteps();
+      switchTab('eval');
+      renderAll();
+    }
+
+    window.exitToLanding = function() {
+      closePeer();
+      stopTimer();
+      state = null;
+      document.getElementById('app-screen').classList.add('hidden');
+      document.getElementById('landing-screen').classList.remove('hidden');
+      const last = localStorage.getItem('futsal_v3_last_code');
+      if (last) {
+        document.getElementById('resume-session-box').classList.remove('hidden');
+        document.getElementById('last-session-code').textContent = last;
+      }
+      history.replaceState(null, '', window.location.pathname);
+    };
+
+    window.copyShareLink = function() {
+      const baseUrl = window.location.href.split('?')[0].split('#')[0];
+      const shareUrl = `${baseUrl}?session=${sessionCode}&role=observer`;
+      navigator.clipboard?.writeText(shareUrl).then(() => {
+        showToast(`Lien observateur copié (Code : ${sessionCode})`);
+      }).catch(() => {
+        showToast(`Code de session à donner : ${sessionCode}`);
+      });
+    };
+
+    // -------------------------------------------------------------------------
+    // 5. NAVIGATION ONGLETS
+    // -------------------------------------------------------------------------
+    window.switchTab = function(tabName) {
+      ['eval', 'matches', 'teams'].forEach(t => {
+        document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tabName);
+      });
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        const active = btn.dataset.tab === tabName;
+        btn.className = active
+          ? 'tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap bg-white text-slate-900 shadow-sm'
+          : 'tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap text-slate-300 hover:bg-slate-800';
+      });
+    };
+
+    // -------------------------------------------------------------------------
+    // 6. NOTES, SCORES, RÉGLAGES (via opérations)
+    // -------------------------------------------------------------------------
+    function computePlayerGrade(p) {
+      let grade = 4.0;
+      if (p.cardio) grade += 0.5;
+      if (p.technique) grade += 0.5;
+      if (p.gentleman) grade += 0.5;
+      if (p.isCaptain && p.captainValidated) grade += 0.5;
+      grade -= (Number(p.malus) || 0);
+      return Math.max(1.0, Math.min(6.0, Math.round(grade * 10) / 10));
+    }
+
+    window.toggleCriterion = function(pid, field) {
+      const p = state && state.players[pid];
+      if (!p) return;
+      if (field === 'captainValidated') {
+        if (currentRole !== 'teacher') return showToast("Seul l'enseignant valide le bonus Capitaine (+0.5).");
+        return dispatch({ t: 'validate', pid, value: !p.captainValidated });
+      }
+      dispatch({ t: 'crit', pid, field, value: !p[field] });
+    };
+    window.adjustMalus = (pid, delta) => { if (currentRole === 'teacher') dispatch({ t: 'malus', pid, delta }); };
+    window.updatePlayerNote = (pid, val) => dispatch({ t: 'note', pid, val });
+    window.updatePlayerName = (pid, val) => { if (currentRole === 'teacher') dispatch({ t: 'name', pid, val }); };
+    window.toggleCaptainStatus = pid => { if (currentRole === 'teacher') dispatch({ t: 'captain', pid }); };
+    window.changeMatchScore = (mid, side, delta) => { if (currentRole === 'teacher') dispatch({ t: 'score', mid, side, delta }); };
+    window.changePenaltyScore = (mid, side, delta) => { if (currentRole === 'teacher') dispatch({ t: 'pen', mid, side, delta }); };
+    window.updateSettings = function() {
+      if (currentRole !== 'teacher') return;
+      dispatch({
+        t: 'settings',
+        finalsMode: document.getElementById('finals-mode-select').value,
+        finalsDuration: Number(document.getElementById('finals-duration-select').value)
+      });
+    };
+    window.resetTournamentScores = function() {
+      if (currentRole !== 'teacher') return;
+      if (!confirm("Effacer tous les scores des matchs ? (Les notes des joueurs sont conservées)")) return;
+      dispatch({ t: 'reset' });
+    };
+
+    function computeStandings() {
+      const stats = {};
+      TEAMS.forEach(t => {
+        stats[t.id] = { id: t.id, name: t.name, badge: t.badge, mj: 0, v: 0, n: 0, d: 0, bp: 0, bc: 0, diff: 0, pts: 0 };
+      });
+      POULE_FIXTURES.forEach(f => {
+        const m = state.matches[f.id];
+        if (m && m.scoreA !== null && m.scoreB !== null) {
+          const a = stats[f.teamA], b = stats[f.teamB];
+          const sA = Number(m.scoreA), sB = Number(m.scoreB);
+          a.mj++; b.mj++;
+          a.bp += sA; a.bc += sB;
+          b.bp += sB; b.bc += sA;
+          if (sA > sB) { a.v++; a.pts += 3; b.d++; }
+          else if (sB > sA) { b.v++; b.pts += 3; a.d++; }
+          else { a.n++; b.n++; a.pts += 1; b.pts += 1; }
+        }
+      });
+      Object.values(stats).forEach(s => { s.diff = s.bp - s.bc; });
+      return Object.values(stats).sort((a, b) =>
+        (b.pts - a.pts) || (b.diff - a.diff) || (b.bp - a.bp) ||
+        TEAMS.findIndex(t => t.id === a.id) - TEAMS.findIndex(t => t.id === b.id));
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. CHRONOMÈTRE (basé sur l'horloge : pas de dérive, fiable écran verrouillé)
+    // -------------------------------------------------------------------------
+    let timerSteps = [];
+    let timerStepIndex = 0;
+    let timerSecondsLeft = 360;
+    let timerRunning = false;
+    let timerInterval = null;
+    let timerEndAt = 0;
+    let timerStepKey = '';
+
+    function syncTimerSteps() {
+      if (!state) return;
+      const standings = computeStandings();
+      const steps = [];
+      const teamLabel = id => TEAMS.find(t => t.id === id)?.name || id;
+
+      POULE_FIXTURES.forEach((f, idx) => {
+        steps.push({
+          badge: `Match ${f.num}`, isPause: false, duration: 360,
+          title: `${teamLabel(f.teamA)} vs ${teamLabel(f.teamB)}`,
+          duty: `Arbitrage : ${teamLabel(f.refTeam)} • Chrono : ${teamLabel(f.chronoTeam)}`
+        });
+        if (idx < POULE_FIXTURES.length - 1 || state.settings.finalsMode !== 'poules_only') {
+          steps.push({
+            badge: 'Pause / Hydratation', isPause: true, duration: 90,
+            title: 'Rotation & Hydratation (1 min 30)',
+            duty: 'Critère Cardio : profiter de la pause pour boire'
+          });
+        }
+      });
+
+      const fDur = state.settings.finalsDuration || 300;
+      if (state.settings.finalsMode === 'both_finals') {
+        steps.push({
+          badge: 'Petite Finale (3e/4e)', isPause: false, duration: fDur,
+          title: `${standings[2].name} vs ${standings[3].name}`,
+          duty: `Arbitrage : ${standings[0].name} • Chrono : ${standings[1].name}`
+        });
+        steps.push({
+          badge: 'Pause avant Finale', isPause: true, duration: 90,
+          title: 'Mise en place Grande Finale', duty: 'Les 2 finalistes s’installent'
+        });
+      }
+      if (state.settings.finalsMode === 'final_only' || state.settings.finalsMode === 'both_finals') {
+        steps.push({
+          badge: '🏆 Grande Finale', isPause: false, duration: fDur,
+          title: `${standings[0].name} vs ${standings[1].name}`,
+          duty: `Arbitrage : ${standings[2].name} • Chrono : ${standings[3].name}`
+        });
+      }
+
+      timerSteps = steps;
+      if (timerStepIndex >= timerSteps.length) timerStepIndex = 0;
+      // On ne remet le temps à zéro que si l'étape elle-même a changé (et pas à chaque but marqué)
+      const key = `${timerStepIndex}|${timerSteps[timerStepIndex]?.duration}|${timerSteps[timerStepIndex]?.badge}`;
+      if (!timerRunning && key !== timerStepKey) {
+        timerSecondsLeft = timerSteps[timerStepIndex]?.duration || 360;
+      }
+      timerStepKey = key;
+      renderTimerUI();
+    }
+
+    function playBuzzer() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(440, ctx.currentTime);
+        gain.gain.setValueAtTime(0.25, ctx.currentTime);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(); osc.stop(ctx.currentTime + 0.65);
+      } catch (e) {}
+      try { navigator.vibrate && navigator.vibrate([300, 100, 300]); } catch (e) {}
+    }
+
+    window.toggleTimer = function() { timerRunning ? stopTimer() : startTimer(); };
+
+    function startTimer() {
+      if (timerRunning) return;
+      if (timerSecondsLeft <= 0) timerSecondsLeft = timerSteps[timerStepIndex]?.duration || 360;
+      timerRunning = true;
+      timerEndAt = Date.now() + timerSecondsLeft * 1000;
+      renderTimerUI();
+      timerInterval = setInterval(() => {
+        timerSecondsLeft = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
+        if (timerSecondsLeft <= 0) {
+          const finished = timerSteps[timerStepIndex];
+          playBuzzer();
+          stopTimer();
+          showToast(`Fin : ${finished?.badge}`);
+          // Enchaînement automatique : on passe à l'étape suivante, prête à démarrer
+          if (timerStepIndex < timerSteps.length - 1) goToStep(timerStepIndex + 1);
+        } else {
+          renderTimerUI();
+        }
+      }, 250);
+    }
+
+    function stopTimer() {
+      if (timerRunning) timerSecondsLeft = Math.max(0, Math.ceil((timerEndAt - Date.now()) / 1000));
+      timerRunning = false;
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      renderTimerUI();
+    }
+
+    function goToStep(i) {
+      stopTimer();
+      timerStepIndex = Math.max(0, Math.min(timerSteps.length - 1, i));
+      timerSecondsLeft = timerSteps[timerStepIndex].duration;
+      timerStepKey = `${timerStepIndex}|${timerSteps[timerStepIndex].duration}|${timerSteps[timerStepIndex].badge}`;
+      renderTimerUI();
+    }
+
+    window.resetCurrentStepTimer = () => goToStep(timerStepIndex);
+    window.nextTimerStep = () => goToStep(timerStepIndex + 1);
+    window.prevTimerStep = () => goToStep(timerStepIndex - 1);
+
+    function renderTimerUI() {
+      const step = timerSteps[timerStepIndex];
+      if (!step) return;
+      const badge = document.getElementById('timer-phase-badge');
+      badge.textContent = step.badge;
+      badge.className = step.isPause
+        ? 'px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase bg-amber-400 text-slate-950'
+        : 'px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase bg-emerald-400 text-slate-950';
+
+      document.getElementById('timer-step-counter').textContent = `Étape ${timerStepIndex + 1} / ${timerSteps.length}`;
+      document.getElementById('timer-match-title').textContent = step.title;
+      document.getElementById('timer-duty-info').textContent = step.duty;
+
+      const mins = String(Math.floor(timerSecondsLeft / 60)).padStart(2, '0');
+      const secs = String(timerSecondsLeft % 60).padStart(2, '0');
+      const disp = document.getElementById('timer-display');
+      disp.textContent = `${mins}:${secs}`;
+      disp.className = timerSecondsLeft <= 15 && !step.isPause
+        ? 'text-5xl sm:text-6xl font-black tabular-nums tracking-tight text-red-400 animate-pulse'
+        : 'text-5xl sm:text-6xl font-black tabular-nums tracking-tight text-white';
+
+      const btn = document.getElementById('timer-toggle-btn');
+      btn.textContent = timerRunning ? '⏸ Pause' : '▶ Démarrer';
+      btn.className = timerRunning
+        ? 'px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-sm shadow transition'
+        : 'px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-sm shadow transition';
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. RENDU DES VUES
+    // -------------------------------------------------------------------------
+    function renderAll() {
+      if (!state) return;
+      renderEvalTab();
+      renderMatchesTab();
+      renderTeamsTab();
+    }
+
+    function renderEvalTab() {
+      // Ne pas détruire le champ de saisie en cours (sinon la frappe est perdue à chaque synchro)
+      const ae = document.activeElement;
+      if (ae && ae.tagName === 'INPUT' && document.getElementById('players-eval-grid').contains(ae)) return;
+      const filtersEl = document.getElementById('eval-team-filters');
+      const filterOptions = [{ id: 'all', name: 'Toutes (20)' }, ...TEAMS];
+      filtersEl.innerHTML = filterOptions.map(opt => {
+        const active = selectedEvalTeam === opt.id;
+        return `<button onclick="setEvalFilter('${opt.id}')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+          active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+        }">${opt.name}</button>`;
+      }).join('');
+
+      const playersList = Object.values(state.players)
+        .filter(p => selectedEvalTeam === 'all' || p.teamId === selectedEvalTeam)
+        .sort((a, b) => a.teamId.localeCompare(b.teamId) || a.index - b.index);
+
+      const grid = document.getElementById('players-eval-grid');
+      grid.innerHTML = playersList.map(p => {
+        const team = TEAMS.find(t => t.id === p.teamId);
+        const grade = computePlayerGrade(p);
+        const gradeColor = grade >= 5.5 ? 'bg-emerald-600 text-white' : grade >= 4.5 ? 'bg-blue-600 text-white' : 'bg-slate-800 text-white';
+
+        return `
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col justify-between gap-3">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-bold px-2 py-0.5 rounded-full border ${team.badge}">${team.name}</span>
+                  ${p.isCaptain ? `<span class="text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">👑 Capitaine</span>` : ''}
+                </div>
+                <div class="font-extrabold text-slate-900 text-base mt-1.5">${escapeHtml(p.name)}</div>
+              </div>
+
+              <div class="text-right">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Note</div>
+                <div class="inline-block px-3 py-1 rounded-xl font-black text-lg tabular-nums ${gradeColor}">
+                  ${grade.toFixed(1)}
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+              <button onclick="toggleCriterion('${p.id}', 'cardio')" class="p-2.5 rounded-xl border-2 text-left transition ${
+                p.cardio ? 'bg-emerald-50 border-emerald-500 text-emerald-950' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+              }">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm">🫀</span>
+                  <span class="text-[11px] font-black">${p.cardio ? '✓ +0.5' : '+0.5'}</span>
+                </div>
+                <div class="font-bold text-xs mt-1">Cardio</div>
+              </button>
+
+              <button onclick="toggleCriterion('${p.id}', 'technique')" class="p-2.5 rounded-xl border-2 text-left transition ${
+                p.technique ? 'bg-emerald-50 border-emerald-500 text-emerald-950' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+              }">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm">⚡</span>
+                  <span class="text-[11px] font-black">${p.technique ? '✓ +0.5' : '+0.5'}</span>
+                </div>
+                <div class="font-bold text-xs mt-1">Technique</div>
+              </button>
+
+              <button onclick="toggleCriterion('${p.id}', 'gentleman')" class="p-2.5 rounded-xl border-2 text-left transition ${
+                p.gentleman ? 'bg-emerald-50 border-emerald-500 text-emerald-950' : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
+              }">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm">🤝</span>
+                  <span class="text-[11px] font-black">${p.gentleman ? '✓ +0.5' : '+0.5'}</span>
+                </div>
+                <div class="font-bold text-xs mt-1">Gentleman</div>
+              </button>
+            </div>
+
+            ${currentRole === 'teacher' ? `
+              <div class="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                ${p.isCaptain ? `
+                  <button onclick="toggleCriterion('${p.id}', 'captainValidated')" class="px-2.5 py-1.5 rounded-lg font-bold border transition ${
+                    p.captainValidated ? 'bg-amber-400 text-slate-950 border-amber-500' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                  }">
+                    ${p.captainValidated ? '👑 Capitaine validé (+0.5)' : '👑 Valider rôle Capitaine (+0.5)'}
+                  </button>
+                ` : `<span class="text-[11px] text-slate-400">Base participation : 4.0</span>`}
+
+                <div class="flex items-center gap-1.5 ml-auto">
+                  <span class="text-[11px] font-semibold text-slate-500">Malus :</span>
+                  <button onclick="adjustMalus('${p.id}', -0.5)" class="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 font-bold">-</button>
+                  <span class="font-mono font-bold text-red-600 w-8 text-center">${p.malus ? '-' + Number(p.malus).toFixed(1) : '0.0'}</span>
+                  <button onclick="adjustMalus('${p.id}', 0.5)" class="w-6 h-6 rounded bg-red-50 hover:bg-red-100 text-red-700 font-bold">+</button>
+                </div>
+              </div>
+            ` : ''}
+
+            <input
+              type="text"
+              value="${escapeHtml(p.note || '')}"
+              onchange="updatePlayerNote('${p.id}', this.value)"
+              placeholder="Remarque rapide (ex: beau repli défensif, encourage beaucoup...)"
+              class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:border-slate-400"
+            />
+          </div>
+        `;
+      }).join('');
+    }
+
+    window.setEvalFilter = function(teamId) {
+      selectedEvalTeam = teamId;
+      renderEvalTab();
+    };
+
+    function renderMatchesTab() {
+      document.getElementById('finals-mode-select').value = state.settings.finalsMode;
+      document.getElementById('finals-duration-select').value = String(state.settings.finalsDuration);
+
+      const standings = computeStandings();
+      const teamObj = id => TEAMS.find(t => t.id === id);
+
+      document.getElementById('poule-matches-list').innerHTML = POULE_FIXTURES.map(f => {
+        const m = state.matches[f.id];
+        const tA = teamObj(f.teamA);
+        const tB = teamObj(f.teamB);
+        return renderMatchCard(f.id, `Match ${f.num}`, tA, tB, m, `Arb: ${teamObj(f.refTeam).name} • Chrono: ${teamObj(f.chronoTeam).name}`, false);
+      }).join('');
+
+      const finalsSec = document.getElementById('finals-section');
+      const finalsList = document.getElementById('finals-matches-list');
+      if (state.settings.finalsMode === 'poules_only') {
+        finalsSec.classList.add('hidden');
+      } else {
+        finalsSec.classList.remove('hidden');
+        let html = '';
+        if (state.settings.finalsMode === 'both_finals') {
+          html += renderMatchCard('petite_finale', 'Petite Finale (3e vs 4e)', standings[2], standings[3], state.matches['petite_finale'], `Arb: ${standings[0].name} • Chrono: ${standings[1].name}`, true);
+        }
+        html += renderMatchCard('grande_finale', '🏆 Grande Finale (1er vs 2e)', standings[0], standings[1], state.matches['grande_finale'], `Arb: ${standings[2].name} • Chrono: ${standings[3].name}`, true);
+        finalsList.innerHTML = html;
+      }
+
+      if (currentRole !== 'teacher') {
+        document.querySelectorAll('#poule-matches-list button, #finals-matches-list button').forEach(b => b.classList.add('hidden'));
+      }
+
+      document.getElementById('standings-tbody').innerHTML = standings.map((s, idx) => `
+        <tr class="${idx < 2 ? 'bg-emerald-50/40' : ''}">
+          <td class="py-2.5 px-3 font-black text-slate-700">${idx + 1}</td>
+          <td class="py-2.5 px-2"><span class="px-2 py-0.5 rounded-full font-bold border ${s.badge}">${s.name}</span></td>
+          <td class="py-2.5 px-2 text-center font-semibold">${s.mj}</td>
+          <td class="py-2.5 px-2 text-center font-semibold ${s.diff > 0 ? 'text-emerald-600' : s.diff < 0 ? 'text-red-600' : 'text-slate-500'}">${s.diff > 0 ? '+' + s.diff : s.diff}</td>
+          <td class="py-2.5 px-2 text-center text-slate-600">${s.bp}</td>
+          <td class="py-2.5 px-3 text-center font-black text-slate-900">${s.pts}</td>
+        </tr>
+      `).join('');
+
+      const gf = state.matches['grande_finale'];
+      const champBanner = document.getElementById('champion-banner');
+      if (state.settings.finalsMode !== 'poules_only' && gf && gf.scoreA !== null && gf.scoreB !== null) {
+        let winner = null;
+        if (gf.scoreA > gf.scoreB) winner = standings[0].name;
+        else if (gf.scoreB > gf.scoreA) winner = standings[1].name;
+        else if ((gf.penA || 0) > (gf.penB || 0)) winner = `${standings[0].name} (TAB)`;
+        else if ((gf.penB || 0) > (gf.penA || 0)) winner = `${standings[1].name} (TAB)`;
+
+        if (winner) {
+          champBanner.classList.remove('hidden');
+          document.getElementById('champion-name').textContent = winner;
+        } else {
+          champBanner.classList.add('hidden');
+        }
+      } else {
+        champBanner.classList.add('hidden');
+      }
+    }
+
+    function renderMatchCard(matchId, label, teamA, teamB, m, dutyText, isKnockout) {
+      const sA = m.scoreA === null ? '–' : m.scoreA;
+      const sB = m.scoreB === null ? '–' : m.scoreB;
+      const isDrawKnockout = isKnockout && m.scoreA !== null && m.scoreB !== null && m.scoreA === m.scoreB;
+
+      return `
+        <div class="bg-white rounded-2xl border ${isKnockout ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200'} p-3.5 shadow-sm">
+          <div class="flex items-center justify-between text-[11px] text-slate-500 mb-2">
+            <span class="font-extrabold uppercase ${isKnockout ? 'text-amber-800' : 'text-slate-700'}">${label}</span>
+            <span>${dutyText}</span>
+          </div>
+
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex-1 flex items-center justify-end gap-2">
+              <span class="px-2.5 py-1 rounded-lg text-xs font-extrabold border ${teamA.badge}">${teamA.name}</span>
+              <div class="flex items-center gap-1">
+                <button onclick="changeMatchScore('${matchId}', 'A', -1)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-sm">-</button>
+                <span class="w-7 text-center font-black text-lg tabular-nums">${sA}</span>
+                <button onclick="changeMatchScore('${matchId}', 'A', 1)" class="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-700 text-white font-bold text-sm">+</button>
+              </div>
+            </div>
+
+            <span class="text-xs font-bold text-slate-400 px-1">VS</span>
+
+            <div class="flex-1 flex items-center justify-start gap-2">
+              <div class="flex items-center gap-1">
+                <button onclick="changeMatchScore('${matchId}', 'B', 1)" class="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-700 text-white font-bold text-sm">+</button>
+                <span class="w-7 text-center font-black text-lg tabular-nums">${sB}</span>
+                <button onclick="changeMatchScore('${matchId}', 'B', -1)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-sm">-</button>
+              </div>
+              <span class="px-2.5 py-1 rounded-lg text-xs font-extrabold border ${teamB.badge}">${teamB.name}</span>
+            </div>
+          </div>
+
+          ${isDrawKnockout ? `
+            <div class="mt-2.5 pt-2 border-t border-amber-200 flex items-center justify-center gap-3 text-xs">
+              <span class="font-bold text-amber-900">Tirs au but (TAB) :</span>
+              <div class="flex items-center gap-1">
+                <button onclick="changePenaltyScore('${matchId}', 'A', -1)" class="w-6 h-6 rounded bg-amber-100 font-bold">-</button>
+                <span class="font-black px-1.5">${m.penA || 0}</span>
+                <button onclick="changePenaltyScore('${matchId}', 'A', 1)" class="w-6 h-6 rounded bg-amber-500 text-white font-bold">+</button>
+              </div>
+              <span>-</span>
+              <div class="flex items-center gap-1">
+                <button onclick="changePenaltyScore('${matchId}', 'B', 1)" class="w-6 h-6 rounded bg-amber-500 text-white font-bold">+</button>
+                <span class="font-black px-1.5">${m.penB || 0}</span>
+                <button onclick="changePenaltyScore('${matchId}', 'B', -1)" class="w-6 h-6 rounded bg-amber-100 font-bold">-</button>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderTeamsTab() {
+      const grid = document.getElementById('teams-roster-grid');
+      const ae = document.activeElement;
+      if (ae && ae.tagName === 'INPUT' && grid.contains(ae)) return;
+      grid.innerHTML = TEAMS.map(team => {
+        const players = Object.values(state.players)
+          .filter(p => p.teamId === team.id)
+          .sort((a, b) => a.index - b.index);
+
+        return `
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="px-3 py-1 rounded-full text-xs font-black uppercase border ${team.badge}">Équipe ${team.name}</span>
+              <span class="text-[11px] text-slate-400 font-semibold">👑 = Capitaine</span>
+            </div>
+            <div class="space-y-2">
+              ${players.map(p => `
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-slate-400 w-4">${p.index}.</span>
+                  <input
+                    type="text"
+                    value="${escapeHtml(p.name)}"
+                    onchange="updatePlayerName('${p.id}', this.value)"
+                    class="flex-1 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:border-slate-400"
+                  />
+                  <button
+                    onclick="toggleCaptainStatus('${p.id}')"
+                    title="Désigner comme capitaine de l'équipe"
+                    class="px-2.5 py-1.5 rounded-lg border text-xs font-bold transition ${
+                      p.isCaptain ? 'bg-amber-400 border-amber-500 text-slate-950' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-700'
+                    }"
+                  >
+                    👑
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+      if (currentRole !== 'teacher') {
+        grid.querySelectorAll('input').forEach(i => i.disabled = true);
+        grid.querySelectorAll('button').forEach(b => b.classList.add('hidden'));
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. EXPORT EXCEL (.CSV COMPATIBLE UTF-8 BOM)
+    // -------------------------------------------------------------------------
+    window.exportToCSV = function() {
+      if (!state) return;
+      const rows = [
+        ["Équipe", "Joueur", "Capitaine", "Base", "Cardio (+0.5)", "Technique (+0.5)", "Gentleman (+0.5)", "Bonus Capitaine (+0.5)", "Malus", "Note Finale (/6)", "Observations"]
+      ];
+
+      TEAMS.forEach(t => {
+        const teamPlayers = Object.values(state.players)
+          .filter(p => p.teamId === t.id)
+          .sort((a, b) => a.index - b.index);
+
+        teamPlayers.forEach(p => {
+          const finalGrade = computePlayerGrade(p).toFixed(1).replace('.', ',');
+          rows.push([
+            t.name,
+            p.name,
+            p.isCaptain ? "Oui" : "Non",
+            "4,0",
+            p.cardio ? "0,5" : "0",
+            p.technique ? "0,5" : "0",
+            p.gentleman ? "0,5" : "0",
+            (p.isCaptain && p.captainValidated) ? "0,5" : "0",
+            p.malus ? `-${Number(p.malus).toFixed(1).replace('.', ',')}` : "0",
+            finalGrade,
+            (p.note || "").replace(/^[=+\-@]/, "'$&")
+          ]);
+        });
+      });
+
+      const csvContent = "﻿" + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Notes_Tournoi_Futsal_${sessionCode}_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("Fichier Excel (.csv) téléchargé !");
+    };
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.remove('opacity-0');
+      setTimeout(() => el.classList.add('opacity-0'), 2800);
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
