@@ -649,6 +649,18 @@
       }
     }
 
+    // Empêche la mise en veille de l'écran pendant la séance (Safari iOS 16.4+, Chrome)
+    let wakeLock = null;
+    async function keepAwake() {
+      try {
+        if ('wakeLock' in navigator && !wakeLock) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => { wakeLock = null; });
+        }
+      } catch (e) {}
+    }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state) keepAwake(); });
+
     function initApp() { checkUrlParamsAndLastSession(); }
 
     function enterApp() {
@@ -663,6 +675,7 @@
       ['teacher-format-bar', 'copy-link-btn', 'export-csv-btn', 'timer-card'].forEach(id =>
         document.getElementById(id).classList.toggle('hidden', !isT));
 
+      keepAwake();
       syncTimerSteps();
       switchTab('eval');
       renderAll();
