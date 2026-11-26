@@ -203,6 +203,27 @@
             </select>
           </div>
           <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Durée d'un match de poule</label>
+            <select id="match-duration-select" onchange="updateSettings()" class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800">
+              <option value="240">4 min</option>
+              <option value="300">5 min</option>
+              <option value="360" selected>6 min</option>
+              <option value="420">7 min</option>
+              <option value="480">8 min</option>
+              <option value="600">10 min</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Durée des pauses</label>
+            <select id="pause-duration-select" onchange="updateSettings()" class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800">
+              <option value="60">1 min</option>
+              <option value="90" selected>1 min 30</option>
+              <option value="120">2 min</option>
+              <option value="180">3 min</option>
+              <option value="240">4 min</option>
+            </select>
+          </div>
+          <div>
             <label class="block text-[11px] font-bold uppercase text-slate-500 mb-1">Durée des Finales</label>
             <select id="finals-duration-select" onchange="updateSettings()" class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-800">
               <option value="240">4 min</option>
@@ -247,7 +268,7 @@
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <!-- Colonne Matchs (7 cols) -->
         <div class="lg:col-span-7 space-y-4">
-          <h3 class="font-extrabold text-slate-900 text-sm uppercase tracking-wider">1. Matchs de Poules (6 min)</h3>
+          <h3 id="poules-title" class="font-extrabold text-slate-900 text-sm uppercase tracking-wider">1. Matchs de Poules (6 min)</h3>
           <div id="poule-matches-list" class="space-y-2.5"></div>
 
           <div id="finals-section" class="pt-3 space-y-2.5">
@@ -291,7 +312,7 @@
       <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="font-extrabold text-slate-900 text-base">Composition des 4 équipes (4 × 5 joueurs)</h2>
-          <p class="text-xs text-slate-500">Saisissez les prénoms et cochez l'étoile 👑 pour désigner le capitaine responsable de l'échauffement et des tournus.</p>
+          <p class="text-xs text-slate-500">Saisissez les prénoms, choisissez le nom et la couleur de chaque équipe, désignez le capitaine avec 👑. Un prénom laissé vide = joueur absent (il disparaît des fiches et de l'export). Utilisez ✕ pour retirer un joueur et « + Ajouter » pour en ajouter (8 maximum par équipe).</p>
         </div>
       </div>
 
@@ -312,12 +333,38 @@
     // -------------------------------------------------------------------------
     // 2. STRUCTURE DES DONNÉES DU TOURNOI
     // -------------------------------------------------------------------------
-    const TEAMS = [
-      { id: 'rouge', name: 'Rouge', badge: 'bg-red-100 text-red-800 border-red-200', dot: 'bg-red-500' },
-      { id: 'jaune', name: 'Jaune', badge: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-400' },
-      { id: 'bleu', name: 'Bleu', badge: 'bg-blue-100 text-blue-800 border-blue-200', dot: 'bg-blue-600' },
-      { id: 'sans', name: 'Sans maillot', badge: 'bg-slate-200 text-slate-800 border-slate-300', dot: 'bg-slate-600' }
+    // Palette de couleurs disponibles pour les équipes (nom + classes d'affichage)
+    const PALETTE = {
+      rouge:  { label: 'Rouge',  badge: 'bg-red-100 text-red-800 border-red-200' },
+      jaune:  { label: 'Jaune',  badge: 'bg-amber-100 text-amber-800 border-amber-300' },
+      bleu:   { label: 'Bleu',   badge: 'bg-blue-100 text-blue-800 border-blue-200' },
+      vert:   { label: 'Vert',   badge: 'bg-green-100 text-green-800 border-green-300' },
+      orange: { label: 'Orange', badge: 'bg-orange-100 text-orange-800 border-orange-300' },
+      violet: { label: 'Violet', badge: 'bg-purple-100 text-purple-800 border-purple-200' },
+      rose:   { label: 'Rose',   badge: 'bg-pink-100 text-pink-800 border-pink-200' },
+      noir:   { label: 'Noir',   badge: 'bg-slate-900 text-white border-slate-900' },
+      blanc:  { label: 'Blanc',  badge: 'bg-white text-slate-700 border-slate-400' },
+      gris:   { label: 'Gris (sans maillot)', badge: 'bg-slate-200 text-slate-800 border-slate-300' }
+    };
+    const DEFAULT_TEAMS = [
+      { id: 'rouge', name: 'Rouge', color: 'rouge' },
+      { id: 'jaune', name: 'Jaune', color: 'jaune' },
+      { id: 'bleu', name: 'Bleu', color: 'bleu' },
+      { id: 'sans', name: 'Sans maillot', color: 'gris' }
     ];
+    const MAX_PLAYERS_PER_TEAM = 8;
+    // TEAMS est reconstruit à partir de l'état de la session (nom + couleur modifiables)
+    let TEAMS = DEFAULT_TEAMS.map(t => ({ ...t, ...PALETTE[t.color] }));
+    function applyTeams() {
+      if (!state || !state.teams) return;
+      TEAMS = state.teams.map(t => ({ id: t.id, name: t.name, color: t.color, ...(PALETTE[t.color] || PALETTE.gris) }));
+    }
+    function normalizeState(st) {
+      if (!st.teams) st.teams = DEFAULT_TEAMS.map(t => ({ ...t }));
+      st.settings = Object.assign({ finalsMode: 'final_only', finalsDuration: 300, matchDuration: 360, pauseDuration: 90 }, st.settings || {});
+      return st;
+    }
+    const fmtDur = sec => `${Math.floor(sec / 60)} min${sec % 60 ? ' ' + (sec % 60) + ' s' : ''}`;
 
     const POULE_FIXTURES = [
       { id: 'm1', num: 1, teamA: 'rouge', teamB: 'jaune', refTeam: 'bleu', chronoTeam: 'sans' },
@@ -330,14 +377,14 @@
 
     function buildDefaultState(code) {
       const players = {};
-      TEAMS.forEach(t => {
+      DEFAULT_TEAMS.forEach(t => {
         for (let i = 1; i <= 5; i++) {
           const pid = `${t.id}_${i}`;
           players[pid] = {
             id: pid,
             teamId: t.id,
             index: i,
-            name: `Joueur ${i} (${t.name})`,
+            name: `Joueur ${i}`,
             isCaptain: i === 1,
             cardio: false,
             technique: false,
@@ -359,9 +406,12 @@
       return {
         code,
         updatedAt: Date.now(),
+        teams: DEFAULT_TEAMS.map(t => ({ ...t })),
         settings: {
           finalsMode: 'final_only',
-          finalsDuration: 300
+          finalsDuration: 300,
+          matchDuration: 360,
+          pauseDuration: 90
         },
         matches,
         players
@@ -477,7 +527,7 @@
       esState = sse(`${TOPIC(code)}-state`, 'latest', async msg => {
         try {
           const st = await decodePayload(msg);
-          state = st;
+          state = normalizeState(st);
           setSync('ok', 'Synchronisé');
           if (!got) { got = true; clearTimeout(timeout); onFirstState(); } else renderAll();
         } catch (e) {}
@@ -514,7 +564,32 @@
           if (p) p.malus = Math.max(0, Math.min(3.0, Math.round(((p.malus || 0) + op.delta) * 10) / 10));
           break;
         }
-        case 'name': { const p = state.players[op.pid]; if (p) p.name = String(op.val || '').trim().slice(0, 40) || `Joueur ${p.index}`; break; }
+        case 'name': { const p = state.players[op.pid]; if (p) p.name = String(op.val || '').trim().slice(0, 40); break; }
+        case 'team': {
+          const t = state.teams.find(x => x.id === op.id);
+          if (!t) break;
+          if (op.name !== undefined) t.name = String(op.name).trim().slice(0, 20) || t.name;
+          if (op.color && PALETTE[op.color]) t.color = op.color;
+          break;
+        }
+        case 'addPlayer': {
+          if (!state.teams.some(t => t.id === op.team)) break;
+          const count = Object.values(state.players).filter(p => p.teamId === op.team).length;
+          if (count >= MAX_PLAYERS_PER_TEAM) break;
+          let i = 1;
+          while (state.players[`${op.team}_${i}`]) i++;
+          const pid = `${op.team}_${i}`;
+          state.players[pid] = { id: pid, teamId: op.team, index: i, name: `Joueur ${i}`, isCaptain: false,
+            cardio: false, technique: false, gentleman: false, captainValidated: false, malus: 0, note: '' };
+          break;
+        }
+        case 'removePlayer': {
+          const p = state.players[op.pid];
+          if (!p) break;
+          const count = Object.values(state.players).filter(x => x.teamId === p.teamId).length;
+          if (count > 1) delete state.players[op.pid];
+          break;
+        }
         case 'captain': {
           const target = state.players[op.pid];
           if (!target) break;
@@ -544,6 +619,8 @@
         case 'settings':
           state.settings.finalsMode = op.finalsMode;
           state.settings.finalsDuration = op.finalsDuration;
+          if (op.matchDuration) state.settings.matchDuration = op.matchDuration;
+          if (op.pauseDuration) state.settings.pauseDuration = op.pauseDuration;
           break;
         case 'reset':
           POULE_FIXTURES.forEach(f => { state.matches[f.id] = { scoreA: null, scoreB: null }; });
@@ -605,7 +682,7 @@
       const local = localStorage.getItem(`futsal_v3_session_${code}`);
       currentRole = 'teacher';
       sessionCode = code;
-      state = local ? JSON.parse(local) : buildDefaultState(code);
+      state = normalizeState(local ? JSON.parse(local) : buildDefaultState(code));
       hostSession(code);
       enterApp();
     };
@@ -753,8 +830,17 @@
       dispatch({
         t: 'settings',
         finalsMode: document.getElementById('finals-mode-select').value,
-        finalsDuration: Number(document.getElementById('finals-duration-select').value)
+        finalsDuration: Number(document.getElementById('finals-duration-select').value),
+        matchDuration: Number(document.getElementById('match-duration-select').value),
+        pauseDuration: Number(document.getElementById('pause-duration-select').value)
       });
+    };
+    window.updateTeam = (id, patch) => { if (currentRole === 'teacher') dispatch({ t: 'team', id, ...patch }); };
+    window.addPlayer = team => { if (currentRole === 'teacher') dispatch({ t: 'addPlayer', team }); };
+    window.removePlayer = pid => {
+      if (currentRole !== 'teacher') return;
+      const p = state.players[pid];
+      if (p && confirm(`Retirer « ${p.name || 'ce joueur'} » ? Ses coches et remarques seront perdues.`)) dispatch({ t: 'removePlayer', pid });
     };
     window.resetTournamentScores = function() {
       if (currentRole !== 'teacher') return;
@@ -799,20 +885,23 @@
 
     function syncTimerSteps() {
       if (!state) return;
+      applyTeams();
       const standings = computeStandings();
       const steps = [];
+      const mDur = state.settings.matchDuration || 360;
+      const pDur = state.settings.pauseDuration || 90;
       const teamLabel = id => TEAMS.find(t => t.id === id)?.name || id;
 
       POULE_FIXTURES.forEach((f, idx) => {
         steps.push({
-          badge: `Match ${f.num}`, isPause: false, duration: 360,
+          badge: `Match ${f.num}`, isPause: false, duration: mDur,
           title: `${teamLabel(f.teamA)} vs ${teamLabel(f.teamB)}`,
           duty: `Arbitrage : ${teamLabel(f.refTeam)} • Chrono : ${teamLabel(f.chronoTeam)}`
         });
         if (idx < POULE_FIXTURES.length - 1 || state.settings.finalsMode !== 'poules_only') {
           steps.push({
-            badge: 'Pause / Hydratation', isPause: true, duration: 90,
-            title: 'Rotation & Hydratation (1 min 30)',
+            badge: 'Pause / Hydratation', isPause: true, duration: pDur,
+            title: `Rotation & Hydratation (${fmtDur(pDur)})`,
             duty: 'Critère Cardio : profiter de la pause pour boire'
           });
         }
@@ -826,7 +915,7 @@
           duty: `Arbitrage : ${standings[0].name} • Chrono : ${standings[1].name}`
         });
         steps.push({
-          badge: 'Pause avant Finale', isPause: true, duration: 90,
+          badge: 'Pause avant Finale', isPause: true, duration: pDur,
           title: 'Mise en place Grande Finale', duty: 'Les 2 finalistes s’installent'
         });
       }
@@ -939,6 +1028,7 @@
     // -------------------------------------------------------------------------
     function renderAll() {
       if (!state) return;
+      applyTeams();
       renderEvalTab();
       renderMatchesTab();
       renderTeamsTab();
@@ -949,7 +1039,9 @@
       const ae = document.activeElement;
       if (ae && ae.tagName === 'INPUT' && document.getElementById('players-eval-grid').contains(ae)) return;
       const filtersEl = document.getElementById('eval-team-filters');
-      const filterOptions = [{ id: 'all', name: 'Toutes (20)' }, ...TEAMS];
+      const presentCount = Object.values(state.players).filter(p => p.name !== '').length;
+      if (selectedEvalTeam !== 'all' && !TEAMS.some(t => t.id === selectedEvalTeam)) selectedEvalTeam = 'all';
+      const filterOptions = [{ id: 'all', name: `Toutes (${presentCount})` }, ...TEAMS];
       filtersEl.innerHTML = filterOptions.map(opt => {
         const active = selectedEvalTeam === opt.id;
         return `<button onclick="setEvalFilter('${opt.id}')" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
@@ -958,7 +1050,7 @@
       }).join('');
 
       const playersList = Object.values(state.players)
-        .filter(p => selectedEvalTeam === 'all' || p.teamId === selectedEvalTeam)
+        .filter(p => p.name !== '' && (selectedEvalTeam === 'all' || p.teamId === selectedEvalTeam))
         .sort((a, b) => a.teamId.localeCompare(b.teamId) || a.index - b.index);
 
       const grid = document.getElementById('players-eval-grid');
@@ -1057,6 +1149,9 @@
     function renderMatchesTab() {
       document.getElementById('finals-mode-select').value = state.settings.finalsMode;
       document.getElementById('finals-duration-select').value = String(state.settings.finalsDuration);
+      document.getElementById('match-duration-select').value = String(state.settings.matchDuration);
+      document.getElementById('pause-duration-select').value = String(state.settings.pauseDuration);
+      document.getElementById('poules-title').textContent = `1. Matchs de Poules (${fmtDur(state.settings.matchDuration)})`;
 
       const standings = computeStandings();
       const teamObj = id => TEAMS.find(t => t.id === id);
@@ -1174,45 +1269,49 @@
     function renderTeamsTab() {
       const grid = document.getElementById('teams-roster-grid');
       const ae = document.activeElement;
-      if (ae && ae.tagName === 'INPUT' && grid.contains(ae)) return;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') && grid.contains(ae)) return;
+
       grid.innerHTML = TEAMS.map(team => {
         const players = Object.values(state.players)
           .filter(p => p.teamId === team.id)
           .sort((a, b) => a.index - b.index);
+        const present = players.filter(p => p.name !== '').length;
+        const colorOptions = Object.entries(PALETTE).map(([k, v]) =>
+          `<option value="${k}" ${team.color === k ? 'selected' : ''}>${v.label}</option>`).join('');
 
         return `
           <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-            <div class="flex items-center justify-between">
-              <span class="px-3 py-1 rounded-full text-xs font-black uppercase border ${team.badge}">Équipe ${team.name}</span>
-              <span class="text-[11px] text-slate-400 font-semibold">👑 = Capitaine</span>
+            <div class="flex items-center gap-2 flex-wrap">
+              <input type="text" maxlength="20" value="${escapeHtml(team.name)}"
+                onchange="updateTeam('${team.id}', { name: this.value })"
+                class="w-36 px-3 py-1 rounded-full text-xs font-black uppercase border ${team.badge} focus:outline-none" />
+              <select onchange="updateTeam('${team.id}', { color: this.value })"
+                class="bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700">${colorOptions}</select>
+              <span class="ml-auto text-[11px] text-slate-400 font-semibold">${present} présent(s) • 👑 = Capitaine</span>
             </div>
             <div class="space-y-2">
               ${players.map(p => `
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-bold text-slate-400 w-4">${p.index}.</span>
-                  <input
-                    type="text"
-                    value="${escapeHtml(p.name)}"
+                  <input type="text" value="${escapeHtml(p.name)}" placeholder="Absent (case vide)"
                     onchange="updatePlayerName('${p.id}', this.value)"
-                    class="flex-1 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:border-slate-400"
-                  />
-                  <button
-                    onclick="toggleCaptainStatus('${p.id}')"
-                    title="Désigner comme capitaine de l'équipe"
+                    class="flex-1 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:border-slate-400" />
+                  <button onclick="toggleCaptainStatus('${p.id}')" title="Désigner comme capitaine de l'équipe"
                     class="px-2.5 py-1.5 rounded-lg border text-xs font-bold transition ${
                       p.isCaptain ? 'bg-amber-400 border-amber-500 text-slate-950' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-700'
-                    }"
-                  >
-                    👑
-                  </button>
+                    }">👑</button>
+                  <button onclick="removePlayer('${p.id}')" title="Retirer ce joueur"
+                    class="px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-400 hover:text-red-600 hover:border-red-300">✕</button>
                 </div>
               `).join('')}
             </div>
+            ${players.length < MAX_PLAYERS_PER_TEAM ? `
+              <button onclick="addPlayer('${team.id}')" class="w-full text-xs font-bold text-slate-600 border border-dashed border-slate-300 hover:bg-slate-50 rounded-lg py-1.5">+ Ajouter un joueur</button>` : ''}
           </div>
         `;
       }).join('');
       if (currentRole !== 'teacher') {
-        grid.querySelectorAll('input').forEach(i => i.disabled = true);
+        grid.querySelectorAll('input, select').forEach(i => i.disabled = true);
         grid.querySelectorAll('button').forEach(b => b.classList.add('hidden'));
       }
     }
@@ -1228,7 +1327,7 @@
 
       TEAMS.forEach(t => {
         const teamPlayers = Object.values(state.players)
-          .filter(p => p.teamId === t.id)
+          .filter(p => p.teamId === t.id && p.name !== '')
           .sort((a, b) => a.index - b.index);
 
         teamPlayers.forEach(p => {
